@@ -1,0 +1,572 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no">
+<title>パンダシューティングDX</title>
+
+<style>
+*{
+    margin:0;
+    padding:0;
+    box-sizing:border-box;
+    -webkit-tap-highlight-color:transparent;
+}
+
+html,body{
+    width:100%;
+    height:100%;
+    overflow:hidden;
+    touch-action:none;
+    font-family:sans-serif;
+    background:#87CEEB;
+}
+
+.screen{
+    width:100%;
+    height:100%;
+    display:none;
+    flex-direction:column;
+    justify-content:center;
+    align-items:center;
+    text-align:center;
+    padding:20px;
+}
+
+.active{
+    display:flex;
+}
+
+h1{
+    font-size:2.2rem;
+    margin-bottom:20px;
+}
+
+p{
+    margin:8px 0;
+    line-height:1.6;
+}
+
+button{
+    min-width:220px;
+    min-height:60px;
+    border:none;
+    border-radius:14px;
+    background:#ff9800;
+    color:#fff;
+    font-size:1.2rem;
+    margin-top:20px;
+}
+
+#gameScreen{
+    justify-content:flex-start;
+    padding:0;
+}
+
+#hud{
+    width:100%;
+    display:flex;
+    justify-content:space-between;
+    align-items:center;
+    background:#222;
+    color:#fff;
+    padding:12px;
+    font-size:1rem;
+    z-index:10;
+}
+
+#gameArea{
+    position:relative;
+    width:100%;
+    flex:1;
+    overflow:hidden;
+    background:
+    linear-gradient(
+        #87ceeb 0%,
+        #bdefff 50%,
+        #e8fff5 100%
+    );
+    touch-action:none;
+}
+
+#player{
+    position:absolute;
+    bottom:20px;
+    left:50%;
+    transform:translateX(-50%);
+    font-size:56px;
+    user-select:none;
+}
+
+.enemy{
+    position:absolute;
+    font-size:42px;
+    user-select:none;
+}
+
+.bullet{
+    position:absolute;
+    font-size:24px;
+    user-select:none;
+}
+
+.effect{
+    position:absolute;
+    pointer-events:none;
+    animation:explode .5s forwards;
+}
+
+@keyframes explode{
+    from{
+        opacity:1;
+        transform:scale(0.4);
+    }
+    to{
+        opacity:0;
+        transform:scale(2);
+    }
+}
+
+#specialBanner{
+    position:absolute;
+    top:50%;
+    left:50%;
+    transform:translate(-50%,-50%);
+    font-size:min(10vw,64px);
+    font-weight:bold;
+    color:white;
+    text-shadow:
+    0 0 10px yellow,
+    0 0 20px orange,
+    0 0 40px red;
+    z-index:999;
+    display:none;
+    pointer-events:none;
+}
+
+.specialAnim{
+    animation:specialFlash 1s ease;
+}
+
+@keyframes specialFlash{
+    0%{
+        opacity:0;
+        transform:translate(-50%,-50%) scale(0.4);
+    }
+    30%{
+        opacity:1;
+        transform:translate(-50%,-50%) scale(1.4);
+    }
+    100%{
+        opacity:0;
+        transform:translate(-50%,-50%) scale(2);
+    }
+}
+
+.feverBg{
+    animation:rainbow .3s infinite alternate;
+}
+
+@keyframes rainbow{
+    from{
+        filter:hue-rotate(0deg);
+    }
+    to{
+        filter:hue-rotate(120deg);
+    }
+}
+
+#rank{
+    font-size:2rem;
+    color:#ff5722;
+    margin-top:12px;
+}
+</style>
+</head>
+
+<body>
+
+<div id="startScreen" class="screen active">
+    <h1>🐼 パンダシューティングDX 🐼</h1>
+
+    <p>パンダを左右に動かして竹を発射！</p>
+    <p>タヌキを倒してスコアを稼ごう！</p>
+    <p>ドラッグで移動</p>
+    <p>竹は自動発射</p>
+    <p>10連続撃破でフィーバー発動！</p>
+
+    <button id="startBtn">ゲームスタート</button>
+</div>
+
+<div id="gameScreen" class="screen">
+
+    <div id="hud">
+        <div>スコア：<span id="score">0</span></div>
+        <div>コンボ：<span id="combo">0</span></div>
+        <div>残り：<span id="time">60</span>秒</div>
+    </div>
+
+    <div id="gameArea">
+        <div id="specialBanner"></div>
+        <div id="player">🐼</div>
+    </div>
+
+</div>
+
+<div id="resultScreen" class="screen">
+    <h1>🎉 結果発表 🎉</h1>
+
+    <p style="font-size:1.4rem;">最終スコア</p>
+
+    <div id="finalScore"
+         style="font-size:3rem;font-weight:bold;margin:10px;">
+         0
+    </div>
+
+    <div id="rank">ランク C</div>
+
+    <button id="restartBtn">もう一度遊ぶ</button>
+</div>
+
+<script>
+
+const startScreen=document.getElementById("startScreen");
+const gameScreen=document.getElementById("gameScreen");
+const resultScreen=document.getElementById("resultScreen");
+
+const gameArea=document.getElementById("gameArea");
+const player=document.getElementById("player");
+
+const scoreEl=document.getElementById("score");
+const comboEl=document.getElementById("combo");
+const timeEl=document.getElementById("time");
+
+const finalScoreEl=document.getElementById("finalScore");
+const rankEl=document.getElementById("rank");
+
+const specialBanner=document.getElementById("specialBanner");
+
+let score=0;
+let combo=0;
+let timeLeft=60;
+
+let gameRunning=false;
+let fever=false;
+
+let enemies=[];
+let bullets=[];
+
+let enemyInterval;
+let bulletInterval;
+let timerInterval;
+let feverTimer;
+
+function showScreen(screen){
+
+    startScreen.classList.remove("active");
+    gameScreen.classList.remove("active");
+    resultScreen.classList.remove("active");
+
+    screen.classList.add("active");
+}
+
+function showSpecial(text){
+
+    specialBanner.textContent=text;
+    specialBanner.style.display="block";
+
+    specialBanner.classList.remove("specialAnim");
+
+    void specialBanner.offsetWidth;
+
+    specialBanner.classList.add("specialAnim");
+
+    setTimeout(()=>{
+        specialBanner.style.display="none";
+    },1000);
+}
+
+function startFever(){
+
+    if(fever) return;
+
+    fever=true;
+
+    showSpecial("🌈 FEVER TIME 🌈");
+
+    gameArea.classList.add("feverBg");
+
+    feverTimer=setTimeout(()=>{
+        fever=false;
+        gameArea.classList.remove("feverBg");
+    },5000);
+}
+
+function createEnemy(){
+
+    if(!gameRunning) return;
+
+    const enemy=document.createElement("div");
+
+    enemy.className="enemy";
+    enemy.textContent="🦝";
+
+    const x=Math.random()*(gameArea.clientWidth-50);
+
+    enemy.style.left=x+"px";
+    enemy.style.top="-50px";
+
+    gameArea.appendChild(enemy);
+
+    enemies.push({
+        el:enemy,
+        x:x,
+        y:-50,
+        speed:2+Math.random()*2.5
+    });
+}
+
+function shoot(){
+
+    if(!gameRunning) return;
+
+    const bullet=document.createElement("div");
+
+    bullet.className="bullet";
+    bullet.textContent="🎋";
+
+    const x=player.offsetLeft+15;
+    const y=player.offsetTop;
+
+    bullet.style.left=x+"px";
+    bullet.style.top=y+"px";
+
+    gameArea.appendChild(bullet);
+
+    bullets.push({
+        el:bullet,
+        x:x,
+        y:y
+    });
+}
+
+function explode(x,y){
+
+    const fx=document.createElement("div");
+
+    fx.className="effect";
+    fx.textContent="💥";
+
+    fx.style.left=x+"px";
+    fx.style.top=y+"px";
+    fx.style.fontSize="40px";
+
+    gameArea.appendChild(fx);
+
+    setTimeout(()=>{
+        fx.remove();
+    },500);
+}
+
+function startGame(){
+
+    score=0;
+    combo=0;
+    timeLeft=60;
+    fever=false;
+
+    scoreEl.textContent=0;
+    comboEl.textContent=0;
+    timeEl.textContent=60;
+
+    enemies.forEach(e=>e.el.remove());
+    bullets.forEach(b=>b.el.remove());
+
+    enemies=[];
+    bullets=[];
+
+    gameArea.classList.remove("feverBg");
+
+    player.style.left=(gameArea.clientWidth/2)+"px";
+
+    showScreen(gameScreen);
+
+    gameRunning=true;
+
+    enemyInterval=setInterval(createEnemy,700);
+    bulletInterval=setInterval(shoot,300);
+
+    timerInterval=setInterval(()=>{
+
+        timeLeft--;
+
+        timeEl.textContent=timeLeft;
+
+        if(timeLeft===10){
+            showSpecial("⚡ ラスト10秒 ⚡");
+        }
+
+        if(timeLeft<=0){
+            endGame();
+        }
+
+    },1000);
+
+    requestAnimationFrame(update);
+}
+
+function update(){
+
+    if(!gameRunning) return;
+
+    for(let i=bullets.length-1;i>=0;i--){
+
+        bullets[i].y-=9;
+        bullets[i].el.style.top=bullets[i].y+"px";
+
+        if(bullets[i].y<-50){
+
+            bullets[i].el.remove();
+            bullets.splice(i,1);
+        }
+    }
+
+    for(let i=enemies.length-1;i>=0;i--){
+
+        const e=enemies[i];
+
+        e.y+=e.speed;
+        e.el.style.top=e.y+"px";
+
+        if(e.y>gameArea.clientHeight){
+
+            combo=0;
+            comboEl.textContent=combo;
+
+            e.el.remove();
+            enemies.splice(i,1);
+            continue;
+        }
+
+        for(let j=bullets.length-1;j>=0;j--){
+
+            const b=bullets[j];
+
+            if(
+                Math.abs(e.x-b.x)<35 &&
+                Math.abs(e.y-b.y)<35
+            ){
+
+                explode(e.x,e.y);
+
+                e.el.remove();
+                b.el.remove();
+
+                enemies.splice(i,1);
+                bullets.splice(j,1);
+
+                combo++;
+
+                let addScore=fever ? 30 : 10;
+
+                score+=addScore;
+
+                scoreEl.textContent=score;
+                comboEl.textContent=combo;
+
+                if(combo===10){
+                    startFever();
+                }
+
+                if(combo===20){
+                    showSpecial("🔥 SUPER COMBO 🔥");
+                }
+
+                if(combo===30){
+                    showSpecial("🚀 AMAZING 🚀");
+                }
+
+                break;
+            }
+        }
+    }
+
+    requestAnimationFrame(update);
+}
+
+function endGame(){
+
+    gameRunning=false;
+
+    clearInterval(enemyInterval);
+    clearInterval(bulletInterval);
+    clearInterval(timerInterval);
+    clearTimeout(feverTimer);
+
+    finalScoreEl.textContent=score;
+
+    let rank="C";
+
+    if(score>=700){
+        rank="S";
+    }else if(score>=500){
+        rank="A";
+    }else if(score>=250){
+        rank="B";
+    }
+
+    rankEl.textContent="ランク " + rank;
+
+    if(rank==="S"){
+        showSpecial("🏆 LEGEND 🏆");
+    }
+
+    showScreen(resultScreen);
+}
+
+function movePlayer(clientX){
+
+    const rect=gameArea.getBoundingClientRect();
+
+    let x=clientX-rect.left;
+
+    x=Math.max(30,Math.min(rect.width-30,x));
+
+    player.style.left=x+"px";
+}
+
+let dragging=false;
+
+gameArea.addEventListener("pointerdown",(e)=>{
+    dragging=true;
+    movePlayer(e.clientX);
+});
+
+gameArea.addEventListener("pointermove",(e)=>{
+    if(dragging){
+        movePlayer(e.clientX);
+    }
+});
+
+window.addEventListener("pointerup",()=>{
+    dragging=false;
+});
+
+document.getElementById("startBtn")
+.addEventListener("click",startGame);
+
+document.getElementById("restartBtn")
+.addEventListener("click",startGame);
+
+document.addEventListener("gesturestart",e=>{
+    e.preventDefault();
+});
+
+document.addEventListener("dblclick",e=>{
+    e.preventDefault();
+});
+
+</script>
+
+</body>
+</html>
